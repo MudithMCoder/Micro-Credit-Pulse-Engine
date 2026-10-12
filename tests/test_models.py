@@ -5,5 +5,8 @@ import pandas as pd
 def test_predictions_exist():
     assert Path("data/processed/model_predictions_with_shap.csv").exists()
     df = pd.read_csv("data/processed/model_predictions_with_shap.csv")
-    assert len(df)==2000
+    assert len(df)==400  # Test set only (80/20 split)
     assert "top3_positive" in df.columns
+    assert "top3_negative" in df.columns
+    assert "split" in df.columns
+    assert all(df["split"] == "test")
