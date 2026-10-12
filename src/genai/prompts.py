@@ -1,0 +1,37 @@
+"""Pydantic schemas for GenAI Loan Officer Advisory output.
+
+Structured output ensures consistent, parseable responses from LLM.
+"""
+from __future__ import annotations
+from pydantic import BaseModel, Field
+from typing import Literal
+
+
+class LoanOfficerAdvisory(BaseModel):
+    """Structured advisory output for loan officer decision support."""
+
+    applicant_id: int = Field(description="Unique borrower ID from dataset")
+
+    risk_assessment: str = Field(
+        description="Plain-language risk assessment summary (1-2 sentences)",
+        max_length=200
+    )
+
+    environmental_context: str = Field(
+        description="Seasonal/environmental context affecting repayment (e.g., drought, harvest cycle)",
+        max_length=150
+    )
+
+    recommendation: str = Field(
+        description="Actionable loan officer recommendation (e.g., grace period, collateral adjustment)",
+        max_length=200
+    )
+
+    confidence_level: Literal["High", "Medium", "Low"] = Field(
+        description="Confidence in the recommendation based on data quality"
+    )
+
+
+class AdvisoryBatch(BaseModel):
+    """Batch of advisories for multiple applicants."""
+    advisories: list[LoanOfficerAdvisory]
