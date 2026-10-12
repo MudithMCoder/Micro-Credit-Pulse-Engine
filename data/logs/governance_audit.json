@@ -1,0 +1,15 @@
+{
+  "timestamp": "2026-10-12T20:38:46.512191+00:00",
+  "file": "data\\raw\\alternative_credit_scoring.csv",
+  "rows": 2000,
+  "columns": 29,
+  "checks": {
+    "schema": "Pass",
+    "age_bounds": "Pass",
+    "income_bounds": "Fail",
+    "loan_binary": "Pass",
+    "credit_risk_labels": "Pass",
+    "null_over_5pct": {},
+    "area_split_approx": "Pass"
+  }
+}
