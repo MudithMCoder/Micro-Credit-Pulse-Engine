@@ -4,6 +4,8 @@ venv/
 env/
 .venv/
 ENV/
+graphify-out/
+CLAUDE.MD
 
 # Python cache & build artifacts
 __pycache__/
