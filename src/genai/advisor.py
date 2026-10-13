@@ -11,9 +11,9 @@ from typing import Optional
 
 try:
     import google.generativeai as genai
-    GEMINI_AVAILABLE = True
+    GOOGLE_GENAI_AVAILABLE = True
 except ImportError:
-    GEMINI_AVAILABLE = False
+    GOOGLE_GENAI_AVAILABLE = False
 
 from .prompts import LoanOfficerAdvisory
 
@@ -22,7 +22,7 @@ OUTPUT_PATH = Path("data/processed/final_loan_portfolio_report.csv")
 
 
 def _get_gemini_model():
-    """Initialize Gemini model with API key from environment."""
+    """Initialize Gemini model with API key from environment using legacy google.generativeai."""
     api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     if not api_key:
         raise ValueError(
@@ -30,15 +30,30 @@ def _get_gemini_model():
             "Get free key: https://aistudio.google.com/app/apikey"
         )
 
-    if not GEMINI_AVAILABLE:
+    if not GOOGLE_GENAI_AVAILABLE:
         raise ImportError(
             "google-generativeai not installed. "
             "Run: pip install google-generativeai"
         )
 
     genai.configure(api_key=api_key)
+
+    # Try common model names in order of preference
     model_name = os.getenv("GRAPHIFY_GEMINI_MODEL", "gemini-1.5-flash")
-    return genai.GenerativeModel(model_name)
+    try:
+        return genai.GenerativeModel(model_name)
+    except Exception:
+        # Fallback to other common model names if the primary fails
+        fallback_models = ["gemini-pro", "gemini-1.5-pro", "gemini-1.0-pro", "gemini-1.5-flash-latest"]
+        for fallback in fallback_models:
+            if fallback != model_name:  # Avoid trying the same model twice
+                try:
+                    print(f"[WARN] Model '{model_name}' failed, trying fallback: {fallback}")
+                    return genai.GenerativeModel(fallback)
+                except Exception:
+                    continue  # Try next fallback
+        # If all fallbacks fail, re-raise the original error
+        raise Exception(f"All Gemini models failed. Check GRAPHIFY_GEMINI_MODEL env var or API key.")
 
 
 def _build_system_prompt() -> str:
