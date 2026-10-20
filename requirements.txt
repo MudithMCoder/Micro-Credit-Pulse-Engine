@@ -6,4 +6,4 @@ xgboost
 shap
 pytest
 pydantic
-google-generativeai
+google-genai
