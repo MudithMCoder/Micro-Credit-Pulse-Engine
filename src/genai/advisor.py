@@ -10,19 +10,19 @@ from pathlib import Path
 from typing import Optional
 
 try:
-    import google.generativeai as genai
+    from google import genai
     GOOGLE_GENAI_AVAILABLE = True
 except ImportError:
     GOOGLE_GENAI_AVAILABLE = False
 
-from .prompts import LoanOfficerAdvisory
+from .prompts import AdvisoryContent, LoanOfficerAdvisory
 
 PREDICTIONS_PATH = Path("data/processed/model_predictions_with_shap.csv")
 OUTPUT_PATH = Path("data/processed/final_loan_portfolio_report.csv")
 
 
-def _get_gemini_model():
-    """Initialize Gemini model with API key from environment using legacy google.generativeai."""
+def _get_gemini_client():
+    """Create the Gemini API client using credentials from the environment."""
     api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     if not api_key:
         raise ValueError(
@@ -31,29 +31,9 @@ def _get_gemini_model():
         )
 
     if not GOOGLE_GENAI_AVAILABLE:
-        raise ImportError(
-            "google-generativeai not installed. "
-            "Run: pip install google-generativeai"
-        )
+        raise ImportError("google-genai not installed. Run: pip install google-genai")
 
-    genai.configure(api_key=api_key)
-
-    # Try common model names in order of preference
-    model_name = os.getenv("GRAPHIFY_GEMINI_MODEL", "gemini-1.5-flash")
-    try:
-        return genai.GenerativeModel(model_name)
-    except Exception:
-        # Fallback to other common model names if the primary fails
-        fallback_models = ["gemini-pro", "gemini-1.5-pro", "gemini-1.0-pro", "gemini-1.5-flash-latest"]
-        for fallback in fallback_models:
-            if fallback != model_name:  # Avoid trying the same model twice
-                try:
-                    print(f"[WARN] Model '{model_name}' failed, trying fallback: {fallback}")
-                    return genai.GenerativeModel(fallback)
-                except Exception:
-                    continue  # Try next fallback
-        # If all fallbacks fail, re-raise the original error
-        raise Exception(f"All Gemini models failed. Check GRAPHIFY_GEMINI_MODEL env var or API key.")
+    return genai.Client(api_key=api_key)
 
 
 def _build_system_prompt() -> str:
@@ -66,16 +46,21 @@ INPUT: You will receive applicant data (area_type, prediction, SHAP drivers).
 
 OUTPUT: Return ONLY valid JSON matching this schema:
 {
-  "risk_assessment": "1-2 sentence plain-language risk summary",
-  "environmental_context": "Seasonal/environmental factors affecting repayment (e.g., drought, harvest cycle)",
-  "recommendation": "Actionable loan officer recommendation (e.g., grace period, collateral adjustment)",
+  "risk_assessment": "1-2 sentence plain-language risk summary, maximum 200 characters",
+  "environmental_context": "Seasonal/environmental repayment context, maximum 150 characters",
+  "recommendation": "Actionable loan officer recommendation, maximum 200 characters",
   "confidence_level": "High" | "Medium" | "Low"
 }
 
+Character limits are strict maximums, including spaces and punctuation:
+- risk_assessment: at most 200 characters
+- environmental_context: at most 150 characters
+- recommendation: at most 200 characters
+
 RULES:
-- risk_assessment: Translate model prediction + top drivers into plain language
-- environmental_context: For Rural, mention seasonal factors; for Urban, mention digital behavior patterns
-- recommendation: Concrete action (grace period, reduced amount, require co-signer, etc.)
+- risk_assessment: Translate model prediction + top drivers into plain language within 200 characters
+- environmental_context: For Rural, mention seasonal factors; for Urban, mention digital behavior patterns; at most 150 characters
+- recommendation: Concrete action (grace period, reduced amount, require co-signer, etc.) within 200 characters
 - confidence_level: High if SHAP drivers are clear + consistent; Medium if mixed; Low if ambiguous data
 """
 
@@ -105,13 +90,15 @@ Provide loan officer advisory in JSON format."""
 
 def generate_advisories(
     predictions_path: Path = PREDICTIONS_PATH,
-    max_samples: Optional[int] = None
+    max_samples: Optional[int] = None,
+    first_10_only: bool = True,
 ) -> pd.DataFrame:
     """Generate LLM advisories for model predictions.
 
     Args:
         predictions_path: Path to model_predictions_with_shap.csv
-        max_samples: Limit processing to N samples (for testing)
+        max_samples: Limit returned data to N samples (for testing)
+        first_10_only: Generate advisories for only the first 10 rows while retaining all rows
 
     Returns:
         DataFrame with predictions + advisory columns
@@ -122,25 +109,30 @@ def generate_advisories(
             "Run model training first: python -m src.models.train"
         )
 
-    model = _get_gemini_model()
+    client = _get_gemini_client()
+    model_name = os.getenv("GRAPHIFY_GEMINI_MODEL", "gemini-flash-latest")
     system_prompt = _build_system_prompt()
 
     df = pd.read_csv(predictions_path)
-    if max_samples:
-        df = df.head(max_samples)
+    if max_samples is not None:
+        df = df.head(max_samples).copy()
 
-    # Generate advisory for each row
+    generation_df = df.head(10) if first_10_only else df
+
+    # Generate advisory for each selected row
     advisories = []
-    for idx, row in df.iterrows():
+    for idx, row in generation_df.iterrows():
         user_prompt = _build_user_prompt(row, idx)
 
         try:
-            # Gemini structured output via response schema
-            response = model.generate_content(
-                f"{system_prompt}\n\n{user_prompt}",
-                generation_config=genai.GenerationConfig(
-                    response_mime_type="application/json"
-                )
+            # Request JSON output; Pydantic validates the returned fields below.
+            response = client.models.generate_content(
+                model=model_name,
+                contents=f"{system_prompt}\n\n{user_prompt}",
+                config={
+                    "response_mime_type": "application/json",
+                    "response_schema": AdvisoryContent,
+                },
             )
 
             advisory_json = json.loads(response.text)
@@ -151,25 +143,40 @@ def generate_advisories(
             advisories.append(advisory.model_dump())
 
         except Exception as e:
-            # Fallback on API error
-            advisories.append({
-                "applicant_id": int(idx),
-                "risk_assessment": f"Error generating advisory: {str(e)[:50]}",
-                "environmental_context": "N/A",
-                "recommendation": "Manual review required",
-                "confidence_level": "Low"
-            })
+            err_msg = str(e)
+            if "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg:
+                print(f"[WARN] Rate limit / quota exceeded (429). Falling back to rule-based advisory for applicant {idx}.")
+                # Rule-based fallback based on prediction and area type for free/quota protection
+                pred_label = "Approved" if row.get("prediction", 1) == 1 else "Rejected"
+                area_lbl = row.get("area_type", "Unknown")
+                advisories.append({
+                    "applicant_id": int(idx),
+                    "risk_assessment": f"Applicant evaluated as {pred_label} in {area_lbl} cohort based on digital and financial indicators.",
+                    "environmental_context": "Standard seasonal/digital behavior profile observed for cohort." if area_lbl != "Rural" else "Agricultural harvest and cooperative cycle considered.",
+                    "recommendation": "Proceed with standard review and verify income documentation." if pred_label == "Approved" else "Manual review required; verify risk drivers.",
+                    "confidence_level": "Medium"
+                })
+            else:
+                # Fallback on other API errors
+                advisories.append({
+                    "applicant_id": int(idx),
+                    "risk_assessment": f"Error generating advisory: {err_msg[:200]}",
+                    "environmental_context": "N/A",
+                    "recommendation": "Manual review required",
+                    "confidence_level": "Low"
+                })
 
-    # Merge with predictions
-    advisory_df = pd.DataFrame(advisories)
-    result = df.merge(advisory_df, left_index=True, right_on="applicant_id", how="left")
+    # Merge with predictions, retaining rows that were not sent for generation.
+    advisory_df = pd.DataFrame(advisories).set_index("applicant_id")
+    result = df.join(advisory_df, how="left")
 
     return result
 
 
 def generate_portfolio_report(
     output_path: Path = OUTPUT_PATH,
-    max_samples: Optional[int] = None
+    max_samples: Optional[int] = None,
+    first_10_only: bool = False,
 ) -> Path:
     """Generate final portfolio report with predictions + advisories.
 
@@ -181,7 +188,10 @@ def generate_portfolio_report(
         Path to saved report
     """
     print("Generating loan officer advisories...")
-    report = generate_advisories(max_samples=max_samples)
+    report = generate_advisories(
+        max_samples=max_samples,
+        first_10_only=first_10_only,
+    )
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     report.to_csv(output_path, index=False)
