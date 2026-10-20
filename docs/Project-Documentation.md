@@ -53,7 +53,7 @@ Dual-path feature engineering that routes records based on `area_type` to apply 
 - pytest
 
 ### Added Dependencies (2026-10-13)
-- scikit-learn, xgboost, shap, pytest, matplotlib, pydantic, google-generativeai
+- scikit-learn, xgboost, shap, pytest, matplotlib, pydantic, google-genai
 
 ---
 
@@ -342,7 +342,7 @@ Each advisory contains:
 
 #### Dependencies Added
 - pydantic
-- google-generativeai
+- google-genai
 
 #### Quick Start
 ```bash
@@ -432,7 +432,7 @@ pytest tests/ -v
 
 6. **[M5] GenAI Advisory** (requires `--run-genai` and API key)
    - Reads model predictions + SHAP
-   - Generates loan officer advisories via Gemini API
+   - Generates loan officer advisories via Gemini API using the `google-genai` SDK
    - Outputs `data/processed/final_loan_portfolio_report.csv`
 
 ---
@@ -622,7 +622,7 @@ shap
 pytest
 matplotlib
 pydantic
-google-generativeai
+google-genai
 ```
 
 ### Directory Structure Verification

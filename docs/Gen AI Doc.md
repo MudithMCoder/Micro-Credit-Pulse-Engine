@@ -80,7 +80,7 @@ Each advisory contains:
 
 1. **Install GenAI Dependencies**
    ```bash
-   pip install pydantic google-generativeai
+   pip install pydantic google-genai
    ```
 
 2. **Set Environment Variable**
@@ -111,8 +111,9 @@ python main.py --skip-genai
 ```
 
 #### Test with Limited Samples
-```bash
-python main.py --random-state 42
+```powershell
+$env:GRAPHIFY_GEMINI_MODEL="gemini-flash-latest"
+python -m src.genai.advisor
 ```
 
 ## Generated Outputs
@@ -260,7 +261,7 @@ python -m src.genai.advisor
 
 ### Required Libraries
 - `pydantic`: Structured output validation
-- `google-generativeai`: Gemini API integration
+- `google-genai`: Gemini API integration
 - `pandas`, `numpy`: Data processing
 - `shap`, `xgboost`: From M4 predictions
 
@@ -278,7 +279,7 @@ matplotlib
 
 # Added (M5)
 pydantic
-google-generativeai
+google-genai
 ```
 
 ## Related Documentation
