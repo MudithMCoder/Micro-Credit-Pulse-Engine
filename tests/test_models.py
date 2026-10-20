@@ -8,6 +8,7 @@ def test_predictions_exist():
     assert len(df)==400  # Test set only (80/20 split)
     assert "top3_positive" in df.columns
     assert "top3_negative" in df.columns
+    assert "area_type" in df.columns
     assert "split" in df.columns
     assert all(df["split"] == "test")
     assert {"cv_accuracy_mean", "cv_accuracy_std", "cv_roc_auc_mean", "cv_roc_auc_std"} <= set(df.columns)

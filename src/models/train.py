@@ -72,7 +72,7 @@ def train_and_explain():
         neg3.append([X_test.columns[j] for j in idx_sorted_neg[:3]])
 
     # Build output dataframe (TEST SET ONLY)
-    out = df.loc[idx_test, ["loan_approved"]].copy()
+    out = df.loc[idx_test, ["loan_approved", "area_type"]].copy()
     out["prediction"] = (probs_test > 0.5).astype(int)
     out["prob_approved"] = probs_test
     out["top3_positive"] = pos3
