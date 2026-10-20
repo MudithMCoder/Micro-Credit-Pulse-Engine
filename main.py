@@ -74,6 +74,8 @@ def run_pipeline(
 
         predictions_df, model = train_and_explain()
         print(f"[OK] Model trained on test set ({len(predictions_df)} test samples)")
+        print(f"  5-fold CV accuracy: {predictions_df['cv_accuracy_mean'].iloc[0]:.4f} ± {predictions_df['cv_accuracy_std'].iloc[0]:.4f}")
+        print(f"  5-fold CV ROC AUC: {predictions_df['cv_roc_auc_mean'].iloc[0]:.4f} ± {predictions_df['cv_roc_auc_std'].iloc[0]:.4f}")
         print(f"  Test accuracy: {(predictions_df['prediction'] == predictions_df['loan_approved']).mean():.4f}")
         print(f"  Predictions: data/processed/model_predictions_with_shap.csv")
 

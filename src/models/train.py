@@ -2,7 +2,7 @@
 from __future__ import annotations
 import pandas as pd, numpy as np, xgboost as xgb, shap, os
 from pathlib import Path
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import StratifiedKFold, cross_validate, train_test_split
 
 # Use SYNTHESIZED features, not raw data
 FEATURES_PATH = Path("data/processed/engineered_features.parquet")
@@ -45,6 +45,11 @@ def train_and_explain():
         scale_pos_weight=scale_pos_weight, random_state=42,
         use_label_encoder=False, eval_metric="logloss"
     )
+    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+    cv_scores = cross_validate(
+        model, X_train, y_train, cv=cv,
+        scoring={"accuracy": "accuracy", "roc_auc": "roc_auc"}
+    )
     model.fit(X_train, y_train)
 
     # Predict on TEST set only (honest evaluation)
@@ -73,6 +78,11 @@ def train_and_explain():
     out["top3_positive"] = pos3
     out["top3_negative"] = neg3
     out["split"] = "test"
+
+    out["cv_accuracy_mean"] = cv_scores["test_accuracy"].mean()
+    out["cv_accuracy_std"] = cv_scores["test_accuracy"].std()
+    out["cv_roc_auc_mean"] = cv_scores["test_roc_auc"].mean()
+    out["cv_roc_auc_std"] = cv_scores["test_roc_auc"].std()
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
     out.to_csv(OUT, index=False)
